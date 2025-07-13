@@ -1,34 +1,35 @@
+// server.js  (CommonJS + WebSocket)
 const express = require('express');
-const { WebSocketServer } = require('ws');
+const { WebSocketServer, OPEN } = require('ws');   // ⬅️  usamos OPEN para legibilidad
 const bodyParser = require('body-parser');
 const http = require('http');
 
 const app = express();
 app.use(bodyParser.json());
 
+/* ----------  HTTP + WebSocket ---------- */
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-
+const wss    = new WebSocketServer({ server });
 const clients = new Set();
 
 wss.on('connection', (ws) => {
   console.log('Cliente WS conectado');
   clients.add(ws);
-
   ws.on('close', () => {
     console.log('Cliente WS desconectado');
     clients.delete(ws);
   });
 });
 
+/* ----------  RUTA /alexa --------------- */
 app.post('/alexa', (req, res) => {
   try {
     const { request } = req.body;
+    if (!request) throw new Error('Body sin “request”.');
 
-    if (!request) throw new Error('No request in body');
-
+    /* --- 1) LAUNCH REQUEST ------------------------------------ */
     if (request.type === 'LaunchRequest') {
-      return res.json({
+      return res.status(200).json({
         version: '1.0',
         response: {
           outputSpeech: {
@@ -46,28 +47,28 @@ app.post('/alexa', (req, res) => {
       });
     }
 
+    /* --- 2) INTENT REQUEST ------------------------------------ */
     if (request.type === 'IntentRequest') {
-      const intent = request.intent;
-      if (!intent) throw new Error('No intent in request');
-
+      const intent = request.intent || {};
       if (intent.name === 'SetBackgroundColorIntent') {
-        const color = intent.slots?.color?.value || 'blanco';
-        const colors = {
-          rojo: '#ff0000',
-          azul: '#0000ff',
-          verde: '#00ff00',
-          amarillo: '#ffff00',
-          blanco: '#ffffff',
-          negro: '#000000',
-        };
-        const colorHex = colors[color.toLowerCase()] || '#ffffff';
+        const color = (intent.slots?.color?.value || 'blanco').toLowerCase();
 
-        // Enviar color a todos los clientes WS conectados
-        clients.forEach(client => {
-          if (client.readyState === 1) client.send(colorHex);
+        const COLORS = {
+          rojo:      '#ff0000',
+          azul:      '#0000ff',
+          verde:     '#00ff00',
+          amarillo:  '#ffff00',
+          blanco:    '#ffffff',
+          negro:     '#000000'
+        };
+        const colorHex = COLORS[color] || '#ffffff';
+
+        // Enviar a todos los clientes WebSocket
+        clients.forEach((c) => {
+          if (c.readyState === OPEN) c.send(colorHex);
         });
 
-        return res.json({
+        return res.status(200).json({
           version: '1.0',
           response: {
             outputSpeech: {
@@ -79,33 +80,38 @@ app.post('/alexa', (req, res) => {
         });
       }
 
-      return res.json({
+      /* INTENT NO RECONOCIDO */
+      return res.status(200).json({
         version: '1.0',
         response: {
           outputSpeech: {
             type: 'PlainText',
-            text: 'No entendí esa petición. Por favor, intenta con otro comando.'
+            text: 'No entendí esa petición. Intenta “pon el fondo rojo”.'
           },
           shouldEndSession: false
         }
       });
     }
 
-    // Para otros tipos de requests
-    return res.json({
+    /* --- 3) SESSION ENDED ------------------------------------- */
+    if (request.type === 'SessionEndedRequest') {
+      console.log('SessionEnded:', request.reason || 'sin razón');
+      return res.sendStatus(200);      // 200 vacío, Alexa lo acepta
+    }
+
+    /* --- 4) OTRO TIPO DE REQUEST ------------------------------ */
+    return res.status(200).json({
       version: '1.0',
-      response: {
-        shouldEndSession: true
-      }
+      response: { shouldEndSession: true }
     });
-  } catch (error) {
-    console.error(error);
-    return res.json({
+  } catch (err) {
+    console.error('❌  Error manejando la request:', err);
+    return res.status(200).json({
       version: '1.0',
       response: {
         outputSpeech: {
           type: 'PlainText',
-          text: 'Hubo un error procesando tu solicitud'
+          text: 'Hubo un error procesando tu solicitud.'
         },
         shouldEndSession: true
       }
@@ -113,6 +119,8 @@ app.post('/alexa', (req, res) => {
   }
 });
 
-server.listen(3002, () => {
-  console.log('Servidor escuchando en http://localhost:3002');
+/* ----------  ARRANQUE ------------------- */
+const PORT = process.env.PORT || 3002;   // ⬅️  Render / Railway usarán su propio puerto
+server.listen(PORT, () => {
+  console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
