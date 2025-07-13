@@ -28,14 +28,10 @@ app.post('/alexa', (req, res) => {
     console.log('Body recibido:', JSON.stringify(req.body, null, 2));
 
     const request = req.body.request;
-
-    if (!request) {
-      throw new Error('No se encontró el objeto request en el body');
-    }
+    if (!request) throw new Error('No se encontró el objeto request en el body');
 
     if (request.type === 'LaunchRequest') {
-      console.log('LaunchRequest recibido');
-      return res.json({
+      return res.status(200).json({
         version: '1.0',
         response: {
           outputSpeech: {
@@ -57,12 +53,9 @@ app.post('/alexa', (req, res) => {
       const intent = request.intent;
       if (!intent) throw new Error('No se encontró intent en la request');
 
-      console.log(`IntentRequest recibido: ${intent.name}`);
-
       if (intent.name === 'SetBackgroundColorIntent') {
         const colorSlot = intent.slots && intent.slots.color;
         const color = colorSlot && colorSlot.value ? colorSlot.value.toLowerCase() : 'blanco';
-        console.log(`Color solicitado: ${color}`);
 
         const colors = {
           rojo: '#ff0000',
@@ -74,17 +67,14 @@ app.post('/alexa', (req, res) => {
         };
 
         const colorHex = colors[color] || '#ffffff';
-        console.log(`Color hex a enviar: ${colorHex}`);
 
-        // Enviar color a todos los clientes conectados por WebSocket
-        clients.forEach((client) => {
+        clients.forEach(client => {
           if (client.readyState === client.OPEN) {
-            console.log('Enviando color a un cliente WebSocket');
             client.send(colorHex);
           }
         });
 
-        return res.json({
+        return res.status(200).json({
           version: '1.0',
           response: {
             outputSpeech: {
@@ -96,8 +86,7 @@ app.post('/alexa', (req, res) => {
         });
       }
 
-      console.log('Intent no reconocido:', intent.name);
-      return res.json({
+      return res.status(200).json({
         version: '1.0',
         response: {
           outputSpeech: {
@@ -109,8 +98,12 @@ app.post('/alexa', (req, res) => {
       });
     }
 
-    console.log('Tipo de request no manejado:', request.type);
-    return res.json({
+    if (request.type === 'SessionEndedRequest') {
+      console.log('SessionEndedRequest recibido:', request.reason);
+      return res.status(200).send(); // cuerpo vacío, status 200
+    }
+
+    return res.status(200).json({
       version: '1.0',
       response: {
         shouldEndSession: true
@@ -119,7 +112,7 @@ app.post('/alexa', (req, res) => {
 
   } catch (error) {
     console.error('Error capturado:', error);
-    return res.json({
+    return res.status(200).json({
       version: '1.0',
       response: {
         outputSpeech: {
