@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const bodyParser = require('body-parser');
@@ -13,25 +12,23 @@ const wss = new WebSocketServer({ server });
 const clients = new Set();
 
 wss.on('connection', (ws) => {
-  console.log('Nuevo cliente WebSocket conectado');
+  console.log('Cliente WS conectado');
   clients.add(ws);
 
   ws.on('close', () => {
-    console.log('Cliente WebSocket desconectado');
+    console.log('Cliente WS desconectado');
     clients.delete(ws);
   });
 });
 
 app.post('/alexa', (req, res) => {
   try {
-    console.log('--- Nueva petición de Alexa ---');
-    console.log('Body recibido:', JSON.stringify(req.body, null, 2));
+    const { request } = req.body;
 
-    const request = req.body.request;
-    if (!request) throw new Error('No se encontró el objeto request en el body');
+    if (!request) throw new Error('No request in body');
 
     if (request.type === 'LaunchRequest') {
-      return res.status(200).json({
+      return res.json({
         version: '1.0',
         response: {
           outputSpeech: {
@@ -51,12 +48,10 @@ app.post('/alexa', (req, res) => {
 
     if (request.type === 'IntentRequest') {
       const intent = request.intent;
-      if (!intent) throw new Error('No se encontró intent en la request');
+      if (!intent) throw new Error('No intent in request');
 
       if (intent.name === 'SetBackgroundColorIntent') {
-        const colorSlot = intent.slots && intent.slots.color;
-        const color = colorSlot && colorSlot.value ? colorSlot.value.toLowerCase() : 'blanco';
-
+        const color = intent.slots?.color?.value || 'blanco';
         const colors = {
           rojo: '#ff0000',
           azul: '#0000ff',
@@ -65,16 +60,14 @@ app.post('/alexa', (req, res) => {
           blanco: '#ffffff',
           negro: '#000000',
         };
+        const colorHex = colors[color.toLowerCase()] || '#ffffff';
 
-        const colorHex = colors[color] || '#ffffff';
-
+        // Enviar color a todos los clientes WS conectados
         clients.forEach(client => {
-          if (client.readyState === client.OPEN) {
-            client.send(colorHex);
-          }
+          if (client.readyState === 1) client.send(colorHex);
         });
 
-        return res.status(200).json({
+        return res.json({
           version: '1.0',
           response: {
             outputSpeech: {
@@ -86,7 +79,7 @@ app.post('/alexa', (req, res) => {
         });
       }
 
-      return res.status(200).json({
+      return res.json({
         version: '1.0',
         response: {
           outputSpeech: {
@@ -98,26 +91,21 @@ app.post('/alexa', (req, res) => {
       });
     }
 
-    if (request.type === 'SessionEndedRequest') {
-      console.log('SessionEndedRequest recibido:', request.reason);
-      return res.status(200).send(); // cuerpo vacío, status 200
-    }
-
-    return res.status(200).json({
+    // Para otros tipos de requests
+    return res.json({
       version: '1.0',
       response: {
         shouldEndSession: true
       }
     });
-
   } catch (error) {
-    console.error('Error capturado:', error);
-    return res.status(200).json({
+    console.error(error);
+    return res.json({
       version: '1.0',
       response: {
         outputSpeech: {
           type: 'PlainText',
-          text: 'Hubo un error procesando tu solicitud.'
+          text: 'Hubo un error procesando tu solicitud'
         },
         shouldEndSession: true
       }
