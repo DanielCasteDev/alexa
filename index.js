@@ -25,50 +25,46 @@ wss.on('connection', (ws) => {
 app.post('/alexa', (req, res) => {
   try {
     const { request } = req.body;
-    if (!request) throw new Error('Body sin “request”.');
+    console.log('Request:', JSON.stringify(request, null, 2)); // ← Debug
 
-    /* --- 1) LAUNCH REQUEST ------------------------------------ */
+    if (!request) {
+      throw new Error('Request no definido en el body');
+    }
+
+    // LaunchRequest
     if (request.type === 'LaunchRequest') {
-      return res.status(200).json({
+      return res.json({
         version: '1.0',
         response: {
           outputSpeech: {
             type: 'PlainText',
-            text: 'Bienvenido a fondo mágico. Puedes decir, pon el fondo rojo.'
-          },
-          reprompt: {
-            outputSpeech: {
-              type: 'PlainText',
-              text: '¿Qué color quieres para el fondo?'
-            }
+            text: 'Di: "pon el fondo rojo" o "cambia a azul".'
           },
           shouldEndSession: false
         }
       });
     }
 
-    /* --- 2) INTENT REQUEST ------------------------------------ */
+    // IntentRequest
     if (request.type === 'IntentRequest') {
-      const intent = request.intent || {};
+      const intent = request.intent;
       if (intent.name === 'SetBackgroundColorIntent') {
-        const color = (intent.slots?.color?.value || 'blanco').toLowerCase();
+        const color = intent.slots?.color?.value || 'blanco';
+        const colorHex = {
+          rojo: '#FF0000',
+          azul: '#0000FF',
+          verde: '#00FF00',
+          amarillo: '#FFFF00',
+          blanco: '#FFFFFF',
+          negro: '#000000'
+        }[color] || '#FFFFFF';
 
-        const COLORS = {
-          rojo:      '#ff0000',
-          azul:      '#0000ff',
-          verde:     '#00ff00',
-          amarillo:  '#ffff00',
-          blanco:    '#ffffff',
-          negro:     '#000000'
-        };
-        const colorHex = COLORS[color] || '#ffffff';
-
-        // Enviar a todos los clientes WebSocket
-        clients.forEach((c) => {
-          if (c.readyState === OPEN) c.send(colorHex);
+        // Envía el color a los clientes WebSocket
+        clients.forEach(client => {
+          if (client.readyState === OPEN) client.send(colorHex);
         });
 
-        return res.status(200).json({
+        return res.json({
           version: '1.0',
           response: {
             outputSpeech: {
@@ -78,47 +74,43 @@ app.post('/alexa', (req, res) => {
             shouldEndSession: true
           }
         });
+      } else {
+        // Intent no reconocido
+        return res.json({
+          version: '1.0',
+          response: {
+            outputSpeech: {
+              type: 'PlainText',
+              text: 'No entendí el comando. Prueba con "pon el fondo rojo".'
+            },
+            shouldEndSession: false
+          }
+        });
       }
-
-      /* INTENT NO RECONOCIDO */
-      return res.status(200).json({
-        version: '1.0',
-        response: {
-          outputSpeech: {
-            type: 'PlainText',
-            text: 'No entendí esa petición. Intenta “pon el fondo rojo”.'
-          },
-          shouldEndSession: false
-        }
-      });
     }
 
-    /* --- 3) SESSION ENDED ------------------------------------- */
+    // SessionEndedRequest
     if (request.type === 'SessionEndedRequest') {
-      console.log('SessionEnded:', request.reason || 'sin razón');
-      return res.sendStatus(200);      // 200 vacío, Alexa lo acepta
+      console.log('Sesión terminada:', request.reason);
+      return res.sendStatus(200); // Respuesta vacía
     }
 
-    /* --- 4) OTRO TIPO DE REQUEST ------------------------------ */
-    return res.status(200).json({
-      version: '1.0',
-      response: { shouldEndSession: true }
-    });
-  } catch (err) {
-    console.error('❌  Error manejando la request:', err);
+    // Request no manejado
+    throw new Error(`Tipo de request no soportado: ${request.type}`);
+  } catch (error) {
+    console.error('Error:', error);
     return res.status(200).json({
       version: '1.0',
       response: {
         outputSpeech: {
           type: 'PlainText',
-          text: 'Hubo un error procesando tu solicitud.'
+          text: 'Hubo un error. Intenta de nuevo.'
         },
         shouldEndSession: true
       }
     });
   }
 });
-
 /* ----------  ARRANQUE ------------------- */
 const PORT = process.env.PORT || 3002;   // ⬅️  Render / Railway usarán su propio puerto
 server.listen(PORT, () => {
